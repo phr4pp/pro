@@ -35,7 +35,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && trim($name) !== '') {
         exit;
     } else {
         http_response_code(500);
-        echo json_encode(['ok' => false, 'error' => $res]);
+        echo json_encode(['ok' => false, 'error' => $res, 'debug' => error_get_last()]);
         exit;
     }
 }
@@ -67,3 +67,4 @@ if (is_dir($filesDir)) {
 }
 
 echo json_encode(['ok' => true, 'generated' => $generated, 'errors' => $errors, 'passwords' => $passwords]);
+
