@@ -77,16 +77,26 @@ return [true, $data[$filename]];
 
 
 function set_new_password($filename) {
-$filename = sanitize_filename($filename);
-if (!$filename) return [false, 'Ungültiger Dateiname'];
-$pass = generate_password();
-$data = load_passwords();
-$data[$filename] = [
-'password' => $pass,
-'hash' => password_hash($pass, PASSWORD_DEFAULT),
-'updated' => time()
-];
-save_passwords($data);
-return [true, $data[$filename]];
+    $passwordsFile = __DIR__ . '/passwords.json';
+    $passwords = [];
+
+    if (file_exists($passwordsFile)) {
+        $passwords = json_decode(file_get_contents($passwordsFile), true);
+        if (!is_array($passwords)) $passwords = [];
+    }
+
+    // Wenn Datei keinen gültigen Eintrag hat oder Passwort leer/null ist → neu generieren
+    if (!isset($passwords[$filename]) || empty($passwords[$filename]) || $passwords[$filename] === 'null') {
+        $passwords[$filename] = bin2hex(random_bytes(8));
+    }
+
+    // Datei speichern
+    if (file_put_contents($passwordsFile, json_encode($passwords, JSON_PRETTY_PRINT))) {
+        return [true, $passwords[$filename]];
+    } else {
+        return [false, 'Konnte Passwort nicht speichern'];
+    }
 }
+
 ?>
+
