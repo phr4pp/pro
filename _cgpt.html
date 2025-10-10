@@ -1,0 +1,72 @@
+ftp.world4you.com
+usr ftp9698791_pro
+pw  $ryy7CBzcu$ryy7CBzcu
+
+ToneAVD!2025Pro
+
+<!-- TODO:  -->
+https://www.walling.at/pro/list.php
+--> zeigt JSON mit Passwörtern
+
+CSS
+
+Title für index.html
+
+
+
+
+
+
+
+
+ChatGPT Prompt:
+Endprodukt: Ich habe einen Verzeichnis auf einem FTP-Server, in das ich PDF-Dateien laden will, welche jeweils mit einem individuell generierten Passwort geschützt sind.
+Zum Aufruf dieser PDF-Dateien per Link (z.B. https://www.walling.at/pro/visitenkarte.pdf) soll ein Passwort abgefragt werden. Die PDFs können nur mit dem zugehörigen Passwort angezeigt werden.
+Alles soll mit einfachem HTML, CSS, PHP, und simplen serverseitigem Dateischutz wie .htaccess o.ä. funktionieren.
+
+1) Uploadseite:
+https://www.walling.at/pro/index.html
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8">
+    <title></title>
+  </head>
+  <body>
+    <div id="wrapper">
+      <div id="list"></div>
+      <div id="upload">
+        <div id="dragndrop"></div>
+        <div id="uploadbutton"></div>
+      </div>
+    </div>
+  </body>
+</html>
+wrapper 100% breit 100% hoch
+list 35% breit 100% hoch
+upload 65% breit 100% hoch
+dragndrop 100% breit 85% hoch
+button 100% breit 15% hoch
+
+list: hier sollen alle PDF-Dateien, die im Ordner /pro/ sind, vertikal als bspw. visitenkarte.pdf untereinander gelistet werden. vertikal scrollbares div.
+klickt man auf einen Dateinamen wird die public URL zum Dokument + hinterlegtes passwort in die zwischenablage kopiert. in diesem format (xPASSWORTx ist der Platzhalter für das zufällig generierte Passwort - dazu mehr später):
+https://www.walling.at/pro/visitenkarte.pdf
+Passwort: xPASSWORTx
+
+rechts neben den jeweiligen pdf-dateinamen soll ein kleines 36x36px edit-symbol sein. mit klick darauf wird ein neues passwort generiert. promt: Neues Passwort generieren? "Ja" (bestätigen), "Nein" (Prompt schließen und abbrechen).
+die liste gleicht sich beim neuladen der Seite immer mit dem /pro/ verzeichnis ab. wichtig: es dürfen nur die .pdf-dateien gelistet werden
+
+dragndrop: ein simples Drag and Drop Feld, in das ein PDF reingezogen werden kann, welches, nach auswahl und bestätigung der datei, dann automatisch in das /pro/-Verzeichnis geladen wird.
+uploadbutton: wie dragndrop, aber mit klick darauf wird einfach die dateiauswahl gestartet
+
+2) Passwortgeneration:
+Jedes .pdf, das entweder über die Uploadseite oder direkt über einen FTP-Client in das /pro/-Verzeichnis geladen wird, wird mit einem individuellen Passwort geschützt
+Wird das jeweilige PDF über den öffentlichen Link aufgerufen, muss man zuerst das Passwort in ein simples Prompt-Fenster "Passwort eingeben" eingeben und mit "Anzeigen" bestätigen, damit man es öffentlich ansehen kann.
+Wird ein falsches Passwort in den Passwort-Prompt eingegeben, wird "Passwort eingeben" mit "Passwort falsch, erneut eingeben" ersetzt.
+Die Passwörter müssen in einer Datei im /pro/-Verzeichnis gespeichert werden.
+Passwörter: Länge 24 Zeichen, Zahlen 1-9, keine Nullen (0), Kleinbuchstaben a-z, Großbuchstaben A-Z, Sonderzeichen §$%%&?!, in jeder beliebigen Reihenfolge und mindestens eine Zahl, ein Kleibuchstabe, ein Großbuchstabe und ein Sonderzeichen enthalten.
+
+Erkläre mir zuerst ganz einfach, wie du das machen würdest. Mit welchen Programmiersprachen. Reicht HTML+PHP?
+Sag mir was du dazu sonst noch brauchst. FTP-Login mit Passwort? Weitere Angaben?
+Gib mir dann im nächsten Schritt den Code und die Dateinamen, die ich in das /pro/-Verzeichnis laden kann, um meine Idee umzusetzen.
+Ich werde das unter https://www.walling.at/pro/ testen.
