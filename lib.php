@@ -80,23 +80,35 @@ function set_new_password($filename) {
     $passwordsFile = __DIR__ . '/passwords.json';
     $passwords = [];
 
+    // Bestehende Passwörter laden
     if (file_exists($passwordsFile)) {
         $passwords = json_decode(file_get_contents($passwordsFile), true);
-        if (!is_array($passwords)) $passwords = [];
+        if (!is_array($passwords)) {
+            $passwords = [];
+        }
     }
 
-    // Wenn Datei keinen gültigen Eintrag hat oder Passwort leer/null ist → neu generieren
-    if (!isset($passwords[$filename]) || empty($passwords[$filename]) || $passwords[$filename] === 'null') {
-        $passwords[$filename] = bin2hex(random_bytes(8));
+    // Prüfen, ob kein Passwort existiert oder Wert leer / null / ungültig ist
+    if (
+        !isset($passwords[$filename]) ||
+        !$passwords[$filename] ||
+        $passwords[$filename] === 'null' ||
+        trim($passwords[$filename]) === ''
+    ) {
+        $passwords[$filename] = bin2hex(random_bytes(8)); // neues Passwort (16 Zeichen)
     }
 
-    // Datei speichern
-    if (file_put_contents($passwordsFile, json_encode($passwords, JSON_PRETTY_PRINT))) {
-        return [true, $passwords[$filename]];
-    } else {
-        return [false, 'Konnte Passwort nicht speichern'];
+    // JSON speichern
+    $saved = file_put_contents($passwordsFile, json_encode($passwords, JSON_PRETTY_PRINT));
+
+    if ($saved === false) {
+        return [false, 'Konnte Passwortdatei nicht speichern'];
     }
+
+    return [true, $passwords[$filename]];
 }
 
+
 ?>
+
 
