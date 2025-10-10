@@ -3,9 +3,11 @@
 // PURPOSE: Helferfunktionen (Passwort-Generator, Storage)
 */
 
-const DATA_DIR  = __DIR__ . '/_data';
-const FILES_DIR = __DIR__ . '/_files';
-const PASS_FILE = DATA_DIR . '/passwords.json';
+const ROOT_DIR  = __DIR__;                  // /pro
+const DATA_DIR  = ROOT_DIR . '/_data';      // /pro/_data
+const FILES_DIR = ROOT_DIR . '/_files';     // /pro/_files'
+const PASS_FILE = DATA_DIR . '/passwords.json'; // /pro/_data/passwords.json
+
 
 // --- Initialisierung ---
 if (!is_dir(DATA_DIR))  mkdir(DATA_DIR, 0755, true);
@@ -131,3 +133,4 @@ function set_new_password($filename) {
 }
 
 ?>
+
