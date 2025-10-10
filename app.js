@@ -49,12 +49,46 @@ btn.className = 'icon-btn';
 btn.title = 'Passwort neu generieren';
 btn.innerHTML = '<svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M12 6V3L8 7l4 4V8c2.76 0 5 2.24 5 5a5 5 0 0 1-9.9 1h-2.1A7.1 7.1 0 0 0 12 20a7 7 0 0 0 7-7c0-3.87-3.13-7-7-7z"/></svg>';
 btn.addEventListener('click', async () => {
-if (!confirm(`Neues Passwort für \n${f.name}\n\nGenerieren?`)) return;
-const res = await fetch('regen.php', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: f.name }) });
-const out = await res.json();
-if (out.ok) { toast('Passwort aktualisiert.'); fetchList(); }
-else { alert(out.error || 'Fehler beim Aktualisieren'); }
+  if (!confirm(`Neues Passwort für \n${f.name}\n\nGenerieren?`)) return;
+
+  try {
+    const res = await fetch('regen.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: f.name })
+    });
+
+    if (!res.ok) {
+      const txt = await res.text();
+      console.error('Fehler vom Server:', txt);
+      alert('Serverfehler: ' + res.status);
+      return;
+    }
+
+    const out = await res.json();
+
+    if (out.ok && out.password) {
+      // Update direkt in der UI
+      toast(`Neues Passwort generiert: ${out.password}`);
+      // f.password updaten, damit fetchList() nicht nötig ist
+      f.password = out.password;
+
+      // Falls das Passwort im UI angezeigt wird, sofort aktualisieren
+      const pwBadge = row.querySelector('.badge');
+      if (pwBadge) pwBadge.textContent = 'kopieren'; // optional reset
+      // Du könntest hier auch ein eigenes <span> für Passwort einfügen
+
+    } else {
+      console.error('Antwort ohne Passwort', out);
+      alert(out.error || 'Fehler beim Aktualisieren');
+    }
+
+  } catch (err) {
+    console.error('JS/Netzwerkfehler:', err);
+    alert('Fehler beim Senden der Anfrage.');
+  }
 });
+
 right.appendChild(btn);
 
 
@@ -95,3 +129,4 @@ else { alert(out.error || 'Upload fehlgeschlagen'); }
 
 fetchList();
 })();
+
