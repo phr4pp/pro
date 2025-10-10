@@ -1,43 +1,53 @@
 <?php
-/* PURPOSE: Prüft alle PDF-Dateien im Ordner _files und generiert fehlende Passwörter */
-
+/* regen.php
+   Wenn POST JSON { "name":"vis11.pdf" } -> generiert Passwort nur für diese Datei
+   Wenn GET / CLI -> prüft alle PDFs in _files und erzeugt fehlende Passwörter
+*/
 require __DIR__ . '/lib.php';
-
 header('Content-Type: application/json; charset=utf-8');
 
-// Pfad zum PDF-Ordner
-$filesDir = __DIR__ . '/../_files/';
+// Pfade
+$filesDir = files_dir_path();
+$passwordsFile = passwords_file_path();
 
-// Lade bestehende Passwörter
-$passwordsFile = __DIR__ . '/passwords.json';
-$passwords = [];
-
-if (file_exists($passwordsFile)) {
-    $passwords = json_decode(file_get_contents($passwordsFile), true);
-    if (!is_array($passwords)) $passwords = [];
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $body = json_decode(file_get_contents('php://input'), true);
+    $name = $body['name'] ?? '';
+    list($ok, $res) = set_new_password($name);
+    if ($ok) {
+        echo json_encode(['ok' => true, 'name' => normalize_filename($name), 'password' => $res]);
+    } else {
+        http_response_code(400);
+        echo json_encode(['ok' => false, 'error' => $res]);
+    }
+    exit;
 }
 
-// Alle PDFs prüfen
-$updated = false;
+// sonst: Bulk-Update (GET oder CLI)
+$passwords = load_passwords();
+$generated = [];
+$errors = [];
+
+if ($filesDir === false) {
+    echo json_encode(['ok' => false, 'error' => 'Dateiordner nicht gefunden']);
+    exit;
+}
+
 foreach (new DirectoryIterator($filesDir) as $fileInfo) {
     if ($fileInfo->isFile() && strtolower($fileInfo->getExtension()) === 'pdf') {
         $filename = $fileInfo->getFilename();
-
-        // Neues Passwort generieren, wenn es noch keins gibt oder ungültig ist
-        if (!isset($passwords[$filename]) || empty($passwords[$filename]) || $passwords[$filename] === 'null') {
-            $passwords[$filename] = bin2hex(random_bytes(8)); // 16 Zeichen
-            $updated = true;
+        $current = $passwords[$filename] ?? null;
+        if (!is_string($current) || trim($current) === '' || strtolower(trim((string)$current)) === 'null') {
+            list($ok, $res) = set_new_password($filename);
+            if ($ok) {
+                $generated[$filename] = $res;
+                // reload passwords array so we return up-to-date map
+                $passwords = load_passwords();
+            } else {
+                $errors[$filename] = $res;
+            }
         }
     }
 }
 
-// Passwörter speichern, falls geändert
-if ($updated) {
-    if (file_put_contents($passwordsFile, json_encode($passwords, JSON_PRETTY_PRINT)) === false) {
-        echo json_encode(['ok'=>false,'error'=>'Konnte passwords.json nicht speichern']);
-        exit;
-    }
-}
-
-echo json_encode(['ok'=>true, 'passwords'=>$passwords]);
-?>
+echo json_encode(['ok' => true, 'generated' => $generated, 'errors' => $errors, 'passwords' => $passwords]);
