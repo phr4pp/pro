@@ -1,0 +1,14 @@
+# PURPOSE: Pretty URLs & Schutz der internen Ordner
+# Hinweis: mod_rewrite muss aktiv sein.
+
+Options -Indexes
+RewriteEngine On
+
+# PDFs wie /pro/datei.pdf → intern view.php?f=datei.pdf
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^([A-Za-z0-9._-]+\.pdf)$ view.php?f=$1 [L,QSA]
+
+# Direktzugriff auf interne Ordner sperren
+RewriteRule ^_files/ - [F]
+RewriteRule ^_data/ - [F]
