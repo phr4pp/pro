@@ -339,7 +339,7 @@ if (!function_exists('generate_password_safe')) {
  */
 if (!function_exists('ensure_password_entry_safe')) {
     function ensure_password_entry_safe($filename) {
-        $filename = basename((string)$filename);
+        $filename = basename(urldecode((string)$filename));
         if ($filename === '') return null;
 
         // Retry loop für den seltenen Fall eines Race beim Schreiben (best effort)
@@ -436,7 +436,7 @@ if (!function_exists('generate_password_safe')) {
 
 if (!function_exists('ensure_password_entry_safe')) {
     function ensure_password_entry_safe($filename) {
-        $filename = basename((string)$filename);
+        $filename = basename(urldecode((string)$filename));
         if ($filename === '') return null;
 
         $attempts = 0;
@@ -463,6 +463,7 @@ if (!function_exists('ensure_password_entry')) {
 }
 
 ?>
+
 
 
 
