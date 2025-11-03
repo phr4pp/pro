@@ -35,34 +35,17 @@ if (!is_dir(FILES_DIR) && !mkdir(FILES_DIR, 0755, true)) { echo json_encode(['ok
 $target = FILES_DIR . '/' . $san;
 
 if (move_uploaded_file($tmpName, $target)) {
-    // --- sichere Passwort-Behandlung (nutzt Funktionen, die am Ende von lib.php angehängt wurden) ---
-    // ensure_password_entry() ist definiert (alias zu ensure_password_entry_safe).
-    $pw = null;
-    if (function_exists('ensure_password_entry')) {
-        $pw = ensure_password_entry(basename($target));
-    }
+    // sichere Passwort-Zuweisung
+$pw = null;
+if (function_exists('ensure_password_entry')) {
+    $pw = ensure_password_entry(basename($target));
+}
 
-    // Fallback: falls ensure_password_entry aus irgendeinem Grund null zurückgibt,
-    // versuche eine direkte, aber locked, Best-Effort-Ablage:
-    if ($pw === null) {
-        // Best-effort: generate & write under lock
-        if (function_exists('with_passwords_lock') && function_exists('generate_password_safe')) {
-            $pw = generate_password_safe(10);
-            with_passwords_lock(function($current) use ($target, $pw) {
-                $fname = basename($target);
-                $current[$fname] = (string)$pw;
-                return $current;
-            });
-        } else {
-            // letzte Resort: erzeuge temporäres Passwort (keine Persistenz garantiert)
-            $pw = substr(bin2hex(random_bytes(5)), 0, 10);
-        }
-    }
+// Rückgabe an Client
+header('Content-Type: application/json; charset=utf-8');
+echo json_encode(['ok' => true, 'file' => basename($target), 'password' => $pw]);
+exit;
 
-    // Rückgabe an Client
-    header('Content-Type: application/json; charset=utf-8');
-    echo json_encode(['ok' => true, 'file' => basename($target), 'password' => $pw]);
-    exit;
 }
 
 
@@ -79,5 +62,6 @@ if (!$ok) { echo json_encode(['ok'=>false,'error'=>'Passwort konnte nicht erzeug
 echo json_encode(['ok'=>true, 'file'=>$san]);
 
 ?>
+
 
 
