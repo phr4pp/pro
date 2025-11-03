@@ -385,8 +385,85 @@ if (!function_exists('ensure_password_entry')) {
 // ------------------------
 // END: Safe passwords helper (append to lib.php)
 // ------------------------
+// ------------------------
+// Safe Password Helper (append to lib.php)
+// ------------------------
+
+if (!function_exists('with_passwords_lock')) {
+    function with_passwords_lock(callable $cb) {
+        $passwordFile = __DIR__ . '/passwords.json';
+        $lockFile = __DIR__ . '/passwords.lock';
+
+        if (!file_exists($passwordFile)) {
+            @file_put_contents($passwordFile, '{}');
+        }
+
+        $lockFp = @fopen($lockFile, 'c+');
+        if (!$lockFp) return null;
+        if (!flock($lockFp, LOCK_EX)) { fclose($lockFp); return null; }
+
+        $data = @file_get_contents($passwordFile);
+        $current = json_decode($data, true);
+        if (!is_array($current)) $current = [];
+
+        $new = $cb($current);
+        if (!is_array($new)) { flock($lockFp, LOCK_UN); fclose($lockFp); return null; }
+
+        $tmp = $passwordFile . '.tmp';
+        $enc = json_encode($new, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        if ($enc === false) { flock($lockFp, LOCK_UN); fclose($lockFp); return null; }
+        @file_put_contents($tmp, $enc);
+        @rename($tmp, $passwordFile);
+
+        flock($lockFp, LOCK_UN); fclose($lockFp);
+        return $new;
+    }
+}
+
+if (!function_exists('generate_password_safe')) {
+    function generate_password_safe($len = 10) {
+        $chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+        $max = strlen($chars) - 1;
+        $out = '';
+        try {
+            for ($i = 0; $i < $len; $i++) $out .= $chars[random_int(0, $max)];
+        } catch (Exception $e) {
+            for ($i = 0; $i < $len; $i++) $out .= $chars[mt_rand(0, $max)];
+        }
+        return $out;
+    }
+}
+
+if (!function_exists('ensure_password_entry_safe')) {
+    function ensure_password_entry_safe($filename) {
+        $filename = basename((string)$filename);
+        if ($filename === '') return null;
+
+        $attempts = 0;
+        while ($attempts < 5) {
+            $attempts++;
+            $res = with_passwords_lock(function($current) use ($filename) {
+                if (isset($current[$filename]) && is_string($current[$filename]) && $current[$filename] !== '' && strtolower($current[$filename]) !== 'null') {
+                    return $current;
+                }
+                $current[$filename] = generate_password_safe(10);
+                return $current;
+            });
+            if (is_array($res) && isset($res[$filename])) return $res[$filename];
+            usleep(20000 + random_int(0,50000));
+        }
+        return null;
+    }
+}
+
+if (!function_exists('ensure_password_entry')) {
+    function ensure_password_entry($filename) {
+        return ensure_password_entry_safe($filename);
+    }
+}
 
 ?>
+
 
 
 
