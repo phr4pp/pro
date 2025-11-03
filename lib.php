@@ -1,136 +1,215 @@
 <?php
-/* FILE: /pro/lib.php
-// PURPOSE: Helferfunktionen (Passwort-Generator, Storage)
-*/
+// lib.php
+// Robust password management for pro project
+// Replaces/implements loading, atomic saving and safe ensure/set password operations
+// Requirements: PHP 7+
 
-const ROOT_DIR  = __DIR__;                  // /pro
-const DATA_DIR  = ROOT_DIR . '/_data';      // /pro/_data
-const FILES_DIR = ROOT_DIR . '/_files';     // /pro/_files'
-const PASS_FILE = DATA_DIR . '/passwords.json'; // /pro/_data/passwords.json
+// ---- Konfiguration (anpassen falls dein Repo andere Pfade nutzt) ----
+define('DATA_DIR', __DIR__ . '/_data');                 // Verzeichnis in Repo (default _data)
+define('PASSWORDS_FILE', DATA_DIR . '/passwords.json'); // zentrale JSON-Datei
+define('PASSWORDS_LOCK', DATA_DIR . '/passwords.lock'); // Lockfile für flock
 
+// ---- Hilfsfunktionen ----
 
-// --- Initialisierung ---
-if (!is_dir(DATA_DIR))  mkdir(DATA_DIR, 0755, true);
-if (!is_dir(FILES_DIR)) mkdir(FILES_DIR, 0755, true);
-if (!file_exists(PASS_FILE)) file_put_contents(PASS_FILE, json_encode(new stdClass(), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
-
-
-// ----------------------------------------------------------
-// Hilfsfunktionen
-// ----------------------------------------------------------
-
-function sanitize_filename($name) {
-    $name = basename(trim($name));
-    if (!preg_match('/^[A-Za-z0-9._-]+$/', $name)) return false;
-    if (strtolower(substr($name, -4)) !== '.pdf') return false;
-    return $name;
+/**
+ * Stelle sicher, dass DATA_DIR existiert und beschreibbar ist.
+ */
+function ensure_data_dir() {
+    if (!is_dir(DATA_DIR)) {
+        @mkdir(DATA_DIR, 0755, true);
+    }
 }
 
-function generate_password($length = 24) {
-    $digits  = '123456789';
-    $lower   = 'abcdefghijklmnopqrstuvwxyz';
-    $upper   = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-    $special = '§$%&?!';
+/**
+ * Führe eine callback-Closure unter exklusivem Lock auf PASSWORDS_LOCK aus.
+ * Die Closure erhält ein Array (die aktuelle passwords.json parsed) und muss das neue Array zurückgeben.
+ * Die Funktion sorgt für Lesen, Übergabe an die Callback und atomaren Write.
+ *
+ * Returns: array|null -> bei Erfolg das aktuelle (neu geschriebene) Password-Array, bei Fehler null.
+ */
+function with_passwords_lock(callable $cb) {
+    ensure_data_dir();
 
-    $pwd = [];
-    $pwd[] = $digits[random_int(0, strlen($digits) - 1)];
-    $pwd[] = $lower[random_int(0, strlen($lower) - 1)];
-    $pwd[] = $upper[random_int(0, strlen($upper) - 1)];
-    $pwd[] = $special[random_int(0, strlen($special) - 1)];
-
-    $all = $digits . $lower . $upper . $special;
-    for ($i = 4; $i < $length; $i++) {
-        $pwd[] = $all[random_int(0, strlen($all) - 1)];
+    // Öffne Lockfile (create if not exists)
+    $lockFp = @fopen(PASSWORDS_LOCK, 'c+');
+    if ($lockFp === false) {
+        // can't open lock file
+        return null;
     }
 
-    // shuffle
-    for ($i = count($pwd) - 1; $i > 0; $i--) {
-        $j = random_int(0, $i);
-        [$pwd[$i], $pwd[$j]] = [$pwd[$j], $pwd[$i]];
+    // Exclusives blockierendes Lock
+    if (!flock($lockFp, LOCK_EX)) {
+        fclose($lockFp);
+        return null;
     }
 
-    return implode('', $pwd);
-}
-
-// ----------------------------------------------------------
-// Passwort-Management
-// ----------------------------------------------------------
-
-function load_passwords() {
-    $raw = file_get_contents(PASS_FILE);
-    $data = json_decode($raw, true);
-    return is_array($data) ? $data : [];
-}
-
-function save_passwords($arr) {
-    // Atomar schreiben, um beschädigte Dateien zu vermeiden
-    $json = json_encode($arr, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
-    if ($json === false) return false;
-
-    $tmp = PASS_FILE . '.tmp';
-    $bytes = file_put_contents($tmp, $json, LOCK_EX);
-    if ($bytes === false) return false;
-
-    if (!rename($tmp, PASS_FILE)) {
-        @unlink($tmp);
-        return false;
+    // Innerhalb des Locks: sicher lesen, ausführen, schreiben
+    $current = [];
+    if (is_readable(PASSWORDS_FILE)) {
+        $raw = @file_get_contents(PASSWORDS_FILE);
+        $decoded = @json_decode($raw, true);
+        if (is_array($decoded)) $current = $decoded;
+        else $current = [];
+    } else {
+        $current = [];
     }
 
-    return true;
+    // Rufe Callback an - muss ein Array zurückgeben (neue Daten) oder null bei Abbruch
+    $new = $cb($current);
+    if (!is_array($new)) {
+        // Release Lock und return null (Abbruch)
+        flock($lockFp, LOCK_UN);
+        fclose($lockFp);
+        return null;
+    }
+
+    // Schreibe sicher in tmp und rename
+    $tmpFile = PASSWORDS_FILE . '.tmp';
+    $encoded = json_encode($new, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+    if ($encoded === false) {
+        flock($lockFp, LOCK_UN);
+        fclose($lockFp);
+        return null;
+    }
+
+    $ok = @file_put_contents($tmpFile, $encoded);
+    if ($ok === false) {
+        // Release lock
+        flock($lockFp, LOCK_UN);
+        fclose($lockFp);
+        return null;
+    }
+
+    // Optional: flush to disk (best effort)
+    clearstatcache(true, $tmpFile);
+
+    // Atomischer Rename
+    @rename($tmpFile, PASSWORDS_FILE);
+
+    // Release Lock
+    flock($lockFp, LOCK_UN);
+    fclose($lockFp);
+
+    return $new;
 }
 
-// Erstellt fehlende Passwörter, lässt bestehende unberührt
+/**
+ * Lese passwords.json (schnelle nicht-locked Lesung).
+ * Verwende dies nur für nicht-kritische Lesungen; für konsistente Lese+Write benutze with_passwords_lock.
+ */
+function load_passwords_quiet() {
+    if (!is_readable(PASSWORDS_FILE)) return [];
+    $raw = @file_get_contents(PASSWORDS_FILE);
+    $decoded = @json_decode($raw, true);
+    return is_array($decoded) ? $decoded : [];
+}
+
+/**
+ * Generiere ein sicheres, gut lesbares Passwort (Buchstaben+Zahlen, ohne leicht verwechselbare Zeichen).
+ */
+function generate_password($len = 10) {
+    $chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+    $max = strlen($chars) - 1;
+    $out = '';
+    try {
+        for ($i = 0; $i < $len; $i++) {
+            $out .= $chars[random_int(0, $max)];
+        }
+    } catch (Exception $e) {
+        // Fallback falls random_int nicht verfügbar
+        for ($i = 0; $i < $len; $i++) $out .= $chars[mt_rand(0, $max)];
+    }
+    return $out;
+}
+
+/**
+ * Ensure password entry for $filename:
+ * - If an existing valid password entry for the filename exists -> return it (no change)
+ * - If entry missing or invalid -> create a new password, store it and return it
+ *
+ * This function uses with_passwords_lock() so that concurrent calls are serialized.
+ * Returns string(password) on success, or null on fatal error.
+ */
 function ensure_password_entry($filename) {
-    $filename = sanitize_filename($filename);
-    if (!$filename) return [false, 'Ungültiger Dateiname'];
+    $filename = basename((string)$filename);
+    if ($filename === '') return null;
 
-    $data = load_passwords();
+    $attempts = 0;
+    while ($attempts < 5) {
+        $attempts++;
+        $result = with_passwords_lock(function($current) use ($filename) {
+            // Validate current entry for $filename
+            if (isset($current[$filename]) && is_array($current[$filename])) {
+                if (isset($current[$filename]['password']) && is_string($current[$filename]['password']) && $current[$filename]['password'] !== '' && strtolower($current[$filename]['password']) !== 'null') {
+                    // valid password exists -> do nothing
+                    return $current;
+                }
+            }
+            // Create new password entry
+            $pw = generate_password(10);
+            $current[$filename] = [
+                'password' => $pw,
+                'created' => date('c'),
+            ];
+            return $current;
+        });
 
-    // Wenn bereits ein gültiges Passwort existiert → behalten
-    if (
-        isset($data[$filename]['password']) &&
-        is_string($data[$filename]['password']) &&
-        trim(strtolower($data[$filename]['password'])) !== '' &&
-        trim(strtolower($data[$filename]['password'])) !== 'null'
-    ) {
-        return [true, $data[$filename]];
+        if (is_array($result)) {
+            // read back resulting password safely
+            $final = load_passwords_quiet();
+            if (isset($final[$filename]) && isset($final[$filename]['password']) && is_string($final[$filename]['password'])) {
+                return $final[$filename]['password'];
+            } else {
+                // strange: didn't find it - retry
+                usleep(30000);
+                continue;
+            }
+        } else {
+            // lock or write failed - small backoff then retry
+            usleep(50000 + random_int(0, 50000));
+            continue;
+        }
     }
 
-    // Neues Passwort erzeugen
-    $pass = generate_password();
-    $data[$filename] = [
-        'password' => $pass,
-        'hash'     => password_hash($pass, PASSWORD_DEFAULT),
-        'updated'  => time()
-    ];
-
-    if (!save_passwords($data)) {
-        return [false, 'Konnte Passwortdatei nicht speichern'];
-    }
-
-    return [true, $data[$filename]];
+    // failed after retries
+    return null;
 }
 
-// Erzwingt immer ein neues Passwort (z. B. „Passwort neu generieren“-Button)
+/**
+ * Setze explizit ein neues Passwort (z.B. durch UI-Button).
+ * Gibt das neue Passwort zurück oder null bei Fehler.
+ */
 function set_new_password($filename) {
-    $filename = sanitize_filename($filename);
-    if (!$filename) return [false, 'Ungültiger Dateiname'];
+    $filename = basename((string)$filename);
+    if ($filename === '') return null;
 
-    $data = load_passwords();
-    $pass = generate_password();
+    $result = with_passwords_lock(function($current) use ($filename) {
+        $pw = generate_password(12);
+        $current[$filename] = [
+            'password' => $pw,
+            'created' => date('c'),
+            'regenerated' => true
+        ];
+        return $current;
+    });
 
-    $data[$filename] = [
-        'password' => $pass,
-        'hash'     => password_hash($pass, PASSWORD_DEFAULT),
-        'updated'  => time()
-    ];
-
-    if (!save_passwords($data)) {
-        return [false, 'Konnte Passwortdatei nicht speichern'];
+    if (is_array($result) && isset($result[$filename]['password'])) {
+        return $result[$filename]['password'];
     }
-
-    return [true, $data[$filename]];
+    return null;
 }
 
-?>
+/**
+ * Optional: Remove entry (if you want to delete a file entry)
+ */
+function remove_password_entry($filename) {
+    $filename = basename((string)$filename);
+    if ($filename === '') return false;
 
+    $result = with_passwords_lock(function($current) use ($filename) {
+        if (isset($current[$filename])) unset($current[$filename]);
+        return $current;
+    });
+
+    return is_array($result);
+}
