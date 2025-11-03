@@ -35,18 +35,23 @@ if (!is_dir(FILES_DIR) && !mkdir(FILES_DIR, 0755, true)) { echo json_encode(['ok
 $target = FILES_DIR . '/' . $san;
 
 if (move_uploaded_file($tmpName, $target)) {
-    // sichere Passwort-Zuweisung
-$pw = null;
-if (function_exists('ensure_password_entry')) {
-    $pw = ensure_password_entry(basename($target));
+    // --- sichere Normalisierung des Dateinamens ---
+    $baseName = basename(urldecode($baseName));
+    // --- Passwort‑Behandlung ---
+    $pw = null;
+    if (function_exists('ensure_password_entry')) {
+        $pw = ensure_password_entry($baseName);
+    }
+    // Ausgabe an Client
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode([
+        'ok'       => true,
+        'file'     => $baseName,
+        'password' => $pw
+    ]);
+    exit;
 }
 
-// Rückgabe an Client
-header('Content-Type: application/json; charset=utf-8');
-echo json_encode(['ok' => true, 'file' => basename($target), 'password' => $pw]);
-exit;
-
-}
 
 
 
@@ -62,6 +67,7 @@ if (!$ok) { echo json_encode(['ok'=>false,'error'=>'Passwort konnte nicht erzeug
 echo json_encode(['ok'=>true, 'file'=>$san]);
 
 ?>
+
 
 
 
