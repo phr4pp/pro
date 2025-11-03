@@ -266,7 +266,128 @@ function set_new_password($filename) {
 
 
 
+// ------------------------
+// BEGIN: Safe passwords helper (append to lib.php)
+// ------------------------
+
+// Sicherstellen, dass wir nicht vorhandene Funktionen überschreiben
+if (!function_exists('with_passwords_lock')) {
+    /**
+     * Führt Callback unter exklusivem Lock aus. Callback bekommt aktuellen array und muss neuen array zurückgeben.
+     * Returns array on success, null on failure.
+     */
+    function with_passwords_lock(callable $cb) {
+        $dataDir = __DIR__; // Passwortdatei im Repo root (wie original)
+        $passwordFile = $dataDir . '/passwords.json';
+        $lockFile = $dataDir . '/passwords.lock';
+
+        // Ensure file exists
+        if (!file_exists($passwordFile)) {
+            @file_put_contents($passwordFile, "{}");
+        }
+
+        // open lock file
+        $lockFp = @fopen($lockFile, 'c+');
+        if ($lockFp === false) return null;
+
+        if (!flock($lockFp, LOCK_EX)) { fclose($lockFp); return null; }
+
+        // read current
+        $raw = @file_get_contents($passwordFile);
+        $current = @json_decode($raw, true);
+        if (!is_array($current)) $current = [];
+
+        // call callback
+        $new = $cb($current);
+        if (!is_array($new)) {
+            flock($lockFp, LOCK_UN); fclose($lockFp);
+            return null;
+        }
+
+        // write tmp then rename (atomic-ish)
+        $tmp = $passwordFile . '.tmp';
+        $enc = json_encode($new, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        if ($enc === false) { flock($lockFp, LOCK_UN); fclose($lockFp); return null; }
+        if (@file_put_contents($tmp, $enc) === false) { flock($lockFp, LOCK_UN); fclose($lockFp); return null; }
+        @rename($tmp, $passwordFile);
+
+        flock($lockFp, LOCK_UN); fclose($lockFp);
+        return $new;
+    }
+}
+
+if (!function_exists('generate_password_safe')) {
+    function generate_password_safe($len = 10) {
+        $chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+        $max = strlen($chars) - 1;
+        $out = '';
+        try {
+            for ($i = 0; $i < $len; $i++) $out .= $chars[random_int(0, $max)];
+        } catch (Exception $e) {
+            for ($i = 0; $i < $len; $i++) $out .= $chars[mt_rand(0, $max)];
+        }
+        return $out;
+    }
+}
+
+/**
+ * ensure_password_entry_safe($filename)
+ * - wenn bereits ein gültiges password existiert -> unverändert zurückgeben
+ * - sonst -> neues password erzeugen, unter Lock speichern und zurückgeben
+ *
+ * Valid-Check: existierender Eintrag muss ein non-empty string sein und nicht "null".
+ */
+if (!function_exists('ensure_password_entry_safe')) {
+    function ensure_password_entry_safe($filename) {
+        $filename = basename((string)$filename);
+        if ($filename === '') return null;
+
+        // Retry loop für den seltenen Fall eines Race beim Schreiben (best effort)
+        $attempts = 0;
+        while ($attempts < 6) {
+            $attempts++;
+            $res = with_passwords_lock(function($current) use ($filename) {
+                // gültiges password prüfen
+                if (isset($current[$filename]) && is_string($current[$filename]) && $current[$filename] !== '' && strtolower($current[$filename]) !== 'null') {
+                    // leave unchanged
+                    return $current;
+                }
+                // Erzeuge neues Passwort
+                $pw = generate_password_safe(10);
+                $current[$filename] = $pw;
+                return $current;
+            });
+
+            if (is_array($res)) {
+                // lese finalen Wert zurück (non-locked quick read)
+                $pwdata = @json_decode(@file_get_contents(__DIR__ . '/passwords.json'), true);
+                if (is_array($pwdata) && isset($pwdata[$filename]) && is_string($pwdata[$filename]) && $pwdata[$filename] !== '' && strtolower($pwdata[$filename]) !== 'null') {
+                    return $pwdata[$filename];
+                }
+            }
+
+            // Backoff + jitter
+            usleep(20000 + random_int(0,50000));
+        }
+
+        return null;
+    }
+}
+
+// Convenience alias: falls ensure_password_entry bereits existiert in your code, don't overwrite it.
+// But if it's missing or buggy, you can call ensure_password_entry_safe from upload.php.
+if (!function_exists('ensure_password_entry')) {
+    function ensure_password_entry($filename) {
+        return ensure_password_entry_safe($filename);
+    }
+}
+
+// ------------------------
+// END: Safe passwords helper (append to lib.php)
+// ------------------------
+
 ?>
+
 
 
 
